@@ -6,6 +6,7 @@
 
     <queries>
         <package android:name="com.spotify.music" />
+        <package android:name="com.android.chrome" />
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
@@ -19,6 +20,8 @@
     </queries>
 
     <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="INFINIX AI"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <activity
