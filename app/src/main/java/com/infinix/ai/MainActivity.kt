@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ResolveInfo
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -38,7 +39,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var langBtn: Button
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private var lang = "bn-BD"
+    private var lang = "en-US"
     private var pin = ""
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -65,7 +66,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         title.setTypeface(title.typeface, android.graphics.Typeface.BOLD)
         header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         langBtn = Button(this)
-        langBtn.text = "বাং"
+        langBtn.text = "EN"
         langBtn.setOnClickListener {
             lang = if (lang == "bn-BD") "en-US" else "bn-BD"
             langBtn.text = if (lang == "bn-BD") "বাং" else "EN"
@@ -209,8 +210,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (!hasSpotify && !(wantsPlay && music)) return null
         var q = t.replace(Regex("[-–—,.!?]"), " ")
         q = q.replace(Regex("স্পটিফাই|বাজাও|চালাও|প্লে|গান|সং|হেই|ইনফিনিক্স|একটা|আমাকে|দাও|করো"), " ")
-        q = q.replace(Regex("\\b(hey|hello)\\s+infinix(\\s+ai)?\\b"), " ")
-        q = q.replace(Regex("\\binfinix(\\s+ai)?\\b"), " ")
+        q = q.replace(Regex("\\b(hey|hello)\\s+(infinix|infinity)(\\s+ai)?\\b"), " ")
+        q = q.replace(Regex("\\b(infinix|infinity)(\\s+ai)?\\b"), " ")
         q = q.replace(Regex("\\bhey\\s+jarvis\\b"), " ")
         q = q.replace(Regex("\\bspotify(\\s+(e|te|er))?\\b"), " ")
         q = q.replace(Regex("\\b(open|kholo|khulo|khol|play|please|plz|chalao|chalau|chala|bajao|baja|song|songs|gaan|gan|music|kono|ekta|ekti|amake|koro|kor|dao)\\b"), " ")
@@ -249,6 +250,70 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ---------- open any app ----------
+    private val aliases = mapOf(
+        "জিমেইল" to "gmail", "জিমেল" to "gmail", "ইউটিউব" to "youtube",
+        "হোয়াটসঅ্যাপ" to "whatsapp", "হোয়াটসএপ" to "whatsapp", "ফেসবুক" to "facebook",
+        "ক্রোম" to "chrome", "ক্লড" to "claude", "ক্লাউড" to "claude",
+        "টেলিগ্রাম" to "telegram", "ক্যামেরা" to "camera", "সেটিংস" to "settings",
+        "মেসেঞ্জার" to "messenger", "ইনস্টাগ্রাম" to "instagram", "গুগল" to "google",
+        "ম্যাপস" to "maps", "ক্যালেন্ডার" to "calendar", "স্পটিফাই" to "spotify"
+    )
+
+    private fun appQuery(msg: String): String? {
+        val t = msg.lowercase(Locale.ROOT)
+        val wantsOpen = Regex("\\b(open|launch|start|kholo|khulo|khol)\\b|খোলো|খুলো|ওপেন").containsMatchIn(t)
+        if (!wantsOpen) return null
+        var q = t.replace(Regex("[-–—,.!?]"), " ")
+        for ((k, v) in aliases) q = q.replace(k, " $v ")
+        q = q.replace(Regex("হাই|হেই|ইনফিনিক্সি|ইনফিনিক্স|ইনফিনিটি|আই|ওপেন|খোলো|খুলো"), " ")
+        q = q.replace(Regex("\\b(hey|hi|hello)\\s+(infinix|infinity)(\\s+ai)?\\b"), " ")
+        q = q.replace(Regex("\\b(infinix|infinity)(\\s+ai)?\\b"), " ")
+        q = q.replace(Regex("\\b(open|launch|start|kholo|khulo|khol|app|the|please|plz|koro|kor|dao|amar|amake)\\b"), " ")
+        return q.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun norm(s: String) = s.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9\u0980-\u09FF]"), "")
+
+    private fun launchApp(q: String): String? {
+        if (q.isEmpty()) return null
+        val pm = packageManager
+        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = pm.queryIntentActivities(main, 0)
+        val want = norm(q)
+        if (want.isEmpty()) return null
+        var best: ResolveInfo? = null
+        var bestScore = 0
+        var bestLabel = ""
+        for (ri in apps) {
+            val labelRaw = ri.loadLabel(pm).toString()
+            val label = norm(labelRaw)
+            if (label.isEmpty()) continue
+            val score = when {
+                label == want -> 100
+                label.startsWith(want) || (label.length >= 3 && want.startsWith(label)) -> 80
+                label.contains(want) || (label.length >= 3 && want.contains(label)) -> 60
+                else -> 0
+            }
+            if (score > bestScore) {
+                best = ri
+                bestScore = score
+                bestLabel = labelRaw
+            }
+        }
+        val b = best ?: return null
+        val i = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setClassName(b.activityInfo.packageName, b.activityInfo.name)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            startActivity(i)
+            bestLabel
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // ---------- brain ----------
     private fun send(msg0: String) {
         val msg = msg0.trim()
@@ -262,6 +327,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
 
+        val aq = appQuery(msg)
+        if (aq != null) {
+            val opened = launchApp(aq)
+            if (opened != null) {
+                addMsg("$opened khulchi.", 1)
+                speak("Opening $opened")
+            } else {
+                addMsg("\"$aq\" naam-er app khuje pai nai.", 1)
+            }
+            return
+        }
+
         val wait = addMsg("...", 1)
         val usePin = pin
         thread {
@@ -272,17 +349,22 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 c.requestMethod = "POST"
                 c.setRequestProperty("Content-Type", "application/json")
                 c.connectTimeout = 20000
-                c.readTimeout = 60000
+                c.readTimeout = 45000
                 c.doOutput = true
                 val body = JSONObject().put("message", msg).put("pin", usePin).toString()
                 c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 val code = c.responseCode
                 val stream = if (code in 200..299) c.inputStream else c.errorStream
-                val text = stream.bufferedReader().use { it.readText() }
+                val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
                 unauthorized = code == 401
-                reply = JSONObject(text).optString("reply", "Uttor ashe nai.")
+                reply = try {
+                    JSONObject(text).optString("reply", "")
+                } catch (e: Exception) {
+                    ""
+                }
+                if (reply.isEmpty()) reply = "Server error (HTTP $code): " + text.take(200)
             } catch (e: Exception) {
-                reply = "Connection e somossha. Internet check kore abar chesta koro."
+                reply = "Error: " + e.javaClass.simpleName + ": " + (e.message ?: "")
             }
             runOnUiThread {
                 wait.text = reply
